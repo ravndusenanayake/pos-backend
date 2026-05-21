@@ -1,11 +1,17 @@
 import { Router } from 'express';
 import authRoutes from './auth.routes';
+import categoryRoutes from './category.routes';
+import productRoutes from './product.routes';
+import saleRoutes from './sale.routes';
 import { authenticateJWT, requireRole } from '../middlewares/auth.middleware';
 
 const router = Router();
 
-// Mount public authentication routes at /api/auth
+// Mount API routes
 router.use('/auth', authRoutes);
+router.use('/categories', categoryRoutes);
+router.use('/products', productRoutes);
+router.use('/sales', saleRoutes);
 
 // Protected profile endpoint (requires active JWT)
 router.get('/protected-profile', authenticateJWT, (req, res) => {
