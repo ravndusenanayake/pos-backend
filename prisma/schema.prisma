@@ -47,16 +47,18 @@ model Category {
 }
 
 model Product {
-  id           Int         @id @default(autoincrement())
-  name         String
-  category_id  Int
-  category     Category    @relation(fields: [category_id], references: [id])
-  product_type ProductType
-  price        Decimal     @db.Decimal(10, 2)
-  quantity     Int         @default(0)
-  image        String?
-  status       Boolean     @default(true)
-  sale_items   SaleItem[]
+  id                  Int         @id @default(autoincrement())
+  name                String
+  category_id         Int
+  category            Category    @relation(fields: [category_id], references: [id])
+  product_type        ProductType
+  price               Decimal     @db.Decimal(10, 2)
+  quantity            Int         @default(0)
+  low_stock_threshold Int         @default(5)
+  recipe_description  String?
+  image               String?
+  status              Boolean     @default(true)
+  sale_items          SaleItem[]
 
   @@map("products")
 }
