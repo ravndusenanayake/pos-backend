@@ -3,6 +3,7 @@ import authRoutes from './auth.routes';
 import categoryRoutes from './category.routes';
 import productRoutes from './product.routes';
 import saleRoutes from './sale.routes';
+import userRoutes from './user.routes';
 import { authenticateJWT, requireRole } from '../middlewares/auth.middleware';
 
 const router = Router();
@@ -12,6 +13,7 @@ router.use('/auth', authRoutes);
 router.use('/categories', categoryRoutes);
 router.use('/products', productRoutes);
 router.use('/sales', saleRoutes);
+router.use('/users', userRoutes);
 
 // Protected profile endpoint (requires active JWT)
 router.get('/protected-profile', authenticateJWT, (req, res) => {

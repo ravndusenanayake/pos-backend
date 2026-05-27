@@ -176,7 +176,57 @@ export class SaleService {
           },
         },
       },
-      orderBy: { created_at: 'desc' },
     });
+  }
+
+  /**
+   * Retrieve key statistics for the dashboard
+   */
+  async getStats() {
+    // Today's date range (start of day to end of day)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    // 1. Today's Sales Revenue
+    const todaySales = await prisma.sale.aggregate({
+      _sum: {
+        total: true,
+      },
+      where: {
+        created_at: {
+          gte: today,
+          lt: tomorrow,
+        },
+      },
+    });
+
+    // 2. Total Orders (Count)
+    const totalOrders = await prisma.sale.count();
+
+    // 3. Total Products (Count)
+    const totalProducts = await prisma.product.count({
+      where: { status: true },
+    });
+
+    // 4. Total Cashiers (Count)
+    const cashierRole = await prisma.role.findUnique({
+      where: { name: 'CASHIER' },
+    });
+    
+    let totalCashiers = 0;
+    if (cashierRole) {
+      totalCashiers = await prisma.user.count({
+        where: { role_id: cashierRole.id },
+      });
+    }
+
+    return {
+      todaySales: todaySales._sum.total ? Number(todaySales._sum.total) : 0,
+      totalOrders,
+      totalProducts,
+      totalCashiers,
+    };
   }
 }

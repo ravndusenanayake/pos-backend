@@ -86,4 +86,17 @@ export class SaleController {
       res.status(500).json({ error: 'Internal server error' });
     }
   }
+  /**
+   * GET /api/sales/stats
+   * Retrieve dashboard KPI stats
+   */
+  async getStats(req: Request, res: Response): Promise<void> {
+    try {
+      const stats = await saleService.getStats();
+      res.status(200).json(stats);
+    } catch (error: any) {
+      console.error('Error fetching dashboard stats:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
 }

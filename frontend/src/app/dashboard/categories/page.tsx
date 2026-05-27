@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ShieldAlert, Plus, RefreshCw, Layers, X, AlertCircle } from 'lucide-react';
+import { ShieldAlert, Plus, RefreshCw, Layers, X, AlertCircle, Pencil, Trash2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
@@ -28,10 +28,17 @@ export default function CategoriesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Add Category Modal States
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [newCategoryName, setNewCategoryName] = useState('');
-  const [newCategoryStatus, setNewCategoryStatus] = useState(true);
+  // Add/Edit Modal States
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<'ADD' | 'EDIT'>('ADD');
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [categoryName, setCategoryName] = useState('');
+  const [categoryStatus, setCategoryStatus] = useState(true);
+  
+  // Delete Modal States
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [categoryToDelete, setCategoryToDelete] = useState<Category | null>(null);
+
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -42,20 +49,13 @@ export default function CategoriesPage() {
 
     try {
       const res = await fetch('http://localhost:3000/api/categories', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
+        headers: { 'Authorization': `Bearer ${token}` },
       });
-
-      if (!res.ok) {
-        throw new Error('Failed to retrieve categories database');
-      }
-
+      if (!res.ok) throw new Error('Failed to retrieve categories database');
       const data = await res.json();
       setCategories(data);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Error occurred while loading categories';
-      setError(msg);
+      setError(err instanceof Error ? err.message : 'Error occurred while loading categories');
     } finally {
       setLoading(false);
     }
@@ -66,9 +66,32 @@ export default function CategoriesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  const handleAddCategory = async (e: React.FormEvent) => {
+  const openAddModal = () => {
+    setModalMode('ADD');
+    setCategoryName('');
+    setCategoryStatus(true);
+    setSubmitError(null);
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (category: Category) => {
+    setModalMode('EDIT');
+    setEditingId(category.id);
+    setCategoryName(category.name);
+    setCategoryStatus(category.status);
+    setSubmitError(null);
+    setIsModalOpen(true);
+  };
+
+  const openDeleteModal = (category: Category) => {
+    setCategoryToDelete(category);
+    setSubmitError(null);
+    setIsDeleteModalOpen(true);
+  };
+
+  const handleSaveCategory = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCategoryName.trim()) {
+    if (!categoryName.trim()) {
       setSubmitError('Category name is required.');
       return;
     }
@@ -77,38 +100,60 @@ export default function CategoriesPage() {
     setSubmitError(null);
 
     try {
-      const res = await fetch('http://localhost:3000/api/categories', {
-        method: 'POST',
+      const url = modalMode === 'ADD' 
+        ? 'http://localhost:3000/api/categories'
+        : `http://localhost:3000/api/categories/${editingId}`;
+      
+      const method = modalMode === 'ADD' ? 'POST' : 'PUT';
+
+      const res = await fetch(url, {
+        method,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
-          name: newCategoryName.trim(),
-          status: newCategoryStatus,
+          name: categoryName.trim(),
+          status: categoryStatus,
         }),
       });
 
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Failed to ${modalMode.toLowerCase()} category`);
 
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to create category');
-      }
-
-      // Reset states and close modal
-      setNewCategoryName('');
-      setNewCategoryStatus(true);
-      setIsAddModalOpen(false);
+      setIsModalOpen(false);
       fetchCategories();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Error occurred while saving category';
-      setSubmitError(msg);
+      setSubmitError(err instanceof Error ? err.message : 'Error occurred while saving category');
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Authorization Guard: Super Admin Access Only
+  const handleDeleteCategory = async () => {
+    if (!categoryToDelete) return;
+    
+    setSubmitting(true);
+    setSubmitError(null);
+
+    try {
+      const res = await fetch(`http://localhost:3000/api/categories/${categoryToDelete.id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to delete category (it may be linked to products)');
+
+      setIsDeleteModalOpen(false);
+      fetchCategories();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Error occurred while deleting category');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const isSuperAdmin = user?.role?.name === 'SUPER_ADMIN';
   if (!isSuperAdmin) {
     return (
@@ -117,9 +162,6 @@ export default function CategoriesPage() {
           <ShieldAlert className="h-8 w-8" />
         </div>
         <h3 className="text-xl font-bold text-slate-100">Access Privileges Insufficient</h3>
-        <p className="text-sm text-slate-400 mt-2 max-w-sm">
-          This secure database view is restricted to Super Administrator roles only. Please contact system support for authorization.
-        </p>
       </div>
     );
   }
@@ -133,65 +175,37 @@ export default function CategoriesPage() {
           <p className="text-sm text-slate-400 mt-1">Manage and view your product classifications.</p>
         </div>
         <div className="flex items-center gap-3">
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={fetchCategories} 
-            className="border-slate-800 text-slate-300 bg-slate-900/40 hover:bg-slate-900/80"
-          >
-            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-            Sync
+          <Button variant="outline" size="sm" onClick={fetchCategories} className="border-slate-800 text-slate-300 bg-slate-900/40 hover:bg-slate-900/80">
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} /> Sync
           </Button>
-          <Button 
-            size="sm" 
-            onClick={() => {
-              setNewCategoryName('');
-              setNewCategoryStatus(true);
-              setSubmitError(null);
-              setIsAddModalOpen(true);
-            }}
-            className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold transition-all duration-200 shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/20"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Add Category
+          <Button size="sm" onClick={openAddModal} className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold transition-all duration-200 shadow-md shadow-emerald-500/10">
+            <Plus className="h-4 w-4 mr-2" /> Add Category
           </Button>
         </div>
       </div>
 
-      {/* Categories Database Loader */}
       {loading ? (
         <div className="rounded-xl border border-slate-900 bg-slate-950/20 p-24 text-center">
           <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-emerald-500 border-t-transparent mb-4" />
-          <p className="text-sm text-slate-400 font-medium animate-pulse">Syncing categories from POS...</p>
         </div>
       ) : error ? (
-        <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-6 text-center text-red-400">
-          ⚠️ {error}
-          <div className="mt-4">
-            <Button onClick={fetchCategories} variant="outline" size="sm" className="border-red-500/20 text-red-400 hover:bg-red-500/10">
-              Retry Sync
-            </Button>
-          </div>
-        </div>
+        <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-6 text-center text-red-400">⚠️ {error}</div>
       ) : categories.length === 0 ? (
         <div className="rounded-xl border border-slate-900 border-dashed bg-slate-950/10 p-20 text-center">
           <div className="mx-auto h-12 w-12 rounded-full bg-slate-900 flex items-center justify-center border border-slate-800 text-slate-500 mb-4">
             <Layers className="h-6 w-6" />
           </div>
           <h3 className="text-base font-bold text-slate-200">No Categories Registered</h3>
-          <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
-            Get started by creating your very first category definition. Click the &quot;Add Category&quot; button above.
-          </p>
         </div>
       ) : (
-        /* Categories Datatable */
         <div className="rounded-xl border border-slate-900 bg-slate-900/40 backdrop-blur-md overflow-hidden">
           <Table>
             <TableHeader className="bg-slate-900/80 border-slate-800">
               <TableRow className="border-slate-900 hover:bg-slate-900/80">
                 <TableHead className="w-[100px] text-slate-400 font-bold">Category ID</TableHead>
                 <TableHead className="text-slate-400 font-bold">Classification Name</TableHead>
-                <TableHead className="w-[120px] text-slate-400 font-bold text-center">Status Badge</TableHead>
+                <TableHead className="w-[120px] text-slate-400 font-bold text-center">Status</TableHead>
+                <TableHead className="w-[100px] text-slate-400 font-bold text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody className="border-slate-800">
@@ -203,12 +217,20 @@ export default function CategoriesPage() {
                   <TableCell className="font-medium text-slate-200">{category.name}</TableCell>
                   <TableCell className="text-center">
                     <Badge className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                      category.status 
-                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/25' 
-                        : 'bg-red-500/10 text-red-400 border border-red-500/25'
+                      category.status ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/25' : 'bg-red-500/10 text-red-400 border border-red-500/25'
                     }`}>
                       {category.status ? 'Active' : 'Inactive'}
                     </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <button onClick={() => openEditModal(category)} className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-400/10 rounded transition-colors">
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => openDeleteModal(category)} className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-400/10 rounded transition-colors">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -217,49 +239,26 @@ export default function CategoriesPage() {
         </div>
       )}
 
-      {/* Add Category Glassmorphic Modal */}
-      {isAddModalOpen && (
+      {/* Add/Edit Modal */}
+      {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          {/* Backdrop with elegant blur */}
-          <div 
-            className="absolute inset-0 bg-slate-950/80 backdrop-blur-md transition-opacity duration-300"
-            onClick={() => {
-              if (!submitting) {
-                setIsAddModalOpen(false);
-                setSubmitError(null);
-              }
-            }}
-          />
-
-          {/* Modal Container */}
-          <div className="relative w-full max-w-md transform overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/90 p-6 shadow-2xl backdrop-blur-xl transition-all duration-300 animate-in fade-in zoom-in-95">
-            
-            {/* Header */}
+          <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" onClick={() => !submitting && setIsModalOpen(false)} />
+          <div className="relative w-full max-w-md transform overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/90 p-6 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between border-b border-slate-900 pb-4 mb-4">
               <div className="flex items-center gap-2.5">
                 <div className="h-9 w-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-                  <Plus className="h-5 w-5" />
+                  {modalMode === 'ADD' ? <Plus className="h-5 w-5" /> : <Pencil className="h-5 w-5" />}
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-slate-100">Create Category</h3>
+                  <h3 className="text-lg font-bold text-slate-100">{modalMode === 'ADD' ? 'Create' : 'Edit'} Category</h3>
                   <p className="text-xs text-slate-400">Define a new inventory classification</p>
                 </div>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => {
-                  setIsAddModalOpen(false);
-                  setSubmitError(null);
-                }}
-                disabled={submitting}
-                className="h-8 w-8 rounded-lg border border-slate-900 hover:border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-900/50"
-              >
+              <Button variant="ghost" size="icon" onClick={() => setIsModalOpen(false)} disabled={submitting} className="h-8 w-8 rounded-lg border border-slate-900 hover:border-slate-800 text-slate-400">
                 <X className="h-4 w-4" />
               </Button>
             </div>
-
-            {/* Error Message */}
+            
             {submitError && (
               <div className="flex items-start gap-2.5 rounded-lg border border-red-500/20 bg-red-500/5 p-3.5 mb-4 text-xs text-red-400">
                 <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
@@ -267,89 +266,70 @@ export default function CategoriesPage() {
               </div>
             )}
 
-            {/* Form */}
-            <form onSubmit={handleAddCategory} className="space-y-4">
+            <form onSubmit={handleSaveCategory} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="category-name" className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                  Category Name
-                </Label>
+                <Label className="text-xs font-semibold text-slate-400 uppercase">Category Name</Label>
                 <Input
-                  id="category-name"
                   type="text"
-                  placeholder="e.g. Fresh Juices, Milkshakes"
-                  value={newCategoryName}
-                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  value={categoryName}
+                  onChange={(e) => setCategoryName(e.target.value)}
                   disabled={submitting}
-                  className="h-10 border-slate-850 bg-slate-900/40 text-slate-200 placeholder:text-slate-600 focus-visible:border-emerald-500/50 focus-visible:ring-emerald-500/10"
+                  className="bg-slate-900/40 border-slate-850 text-slate-200 focus-visible:border-emerald-500/50"
                   required
-                  autoFocus
                 />
               </div>
 
               <div className="space-y-2">
-                <Label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                  Initial Status
-                </Label>
+                <Label className="text-xs font-semibold text-slate-400 uppercase">Status</Label>
                 <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setNewCategoryStatus(true)}
-                    disabled={submitting}
-                    className={`flex items-center justify-center gap-2 h-10 rounded-xl text-xs font-bold transition-all border ${
-                      newCategoryStatus
-                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 shadow-md shadow-emerald-500/5'
-                        : 'bg-slate-900/10 border-slate-900 text-slate-500 hover:bg-slate-900/40 hover:text-slate-400'
-                    }`}
-                  >
-                    <span className={`h-1.5 w-1.5 rounded-full ${newCategoryStatus ? 'bg-emerald-400' : 'bg-slate-600'}`} />
-                    Active Status
+                  <button type="button" onClick={() => setCategoryStatus(true)} disabled={submitting} className={`flex items-center justify-center gap-2 h-10 rounded-xl text-xs font-bold border ${categoryStatus ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-slate-900/10 border-slate-900 text-slate-500'}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${categoryStatus ? 'bg-emerald-400' : 'bg-slate-600'}`} /> Active
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setNewCategoryStatus(false)}
-                    disabled={submitting}
-                    className={`flex items-center justify-center gap-2 h-10 rounded-xl text-xs font-bold transition-all border ${
-                      !newCategoryStatus
-                        ? 'bg-red-500/10 border-red-500/30 text-red-400 shadow-md shadow-red-500/5'
-                        : 'bg-slate-900/10 border-slate-900 text-slate-500 hover:bg-slate-900/40 hover:text-slate-400'
-                    }`}
-                  >
-                    <span className={`h-1.5 w-1.5 rounded-full ${!newCategoryStatus ? 'bg-red-400' : 'bg-slate-600'}`} />
-                    Inactive Status
+                  <button type="button" onClick={() => setCategoryStatus(false)} disabled={submitting} className={`flex items-center justify-center gap-2 h-10 rounded-xl text-xs font-bold border ${!categoryStatus ? 'bg-red-500/10 border-red-500/30 text-red-400' : 'bg-slate-900/10 border-slate-900 text-slate-500'}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${!categoryStatus ? 'bg-red-400' : 'bg-slate-600'}`} /> Inactive
                   </button>
                 </div>
               </div>
 
-              {/* Actions */}
-              <div className="flex justify-end gap-3 pt-2 mt-2 border-t border-slate-900">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setIsAddModalOpen(false);
-                    setSubmitError(null);
-                  }}
-                  disabled={submitting}
-                  className="border-slate-850 bg-slate-900/20 text-slate-400 hover:text-slate-200 hover:bg-slate-900/80 rounded-xl px-4"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={submitting}
-                  className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-bold rounded-xl px-5 transition-all duration-200 shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/20"
-                >
-                  {submitting ? (
-                    <div className="flex items-center gap-2">
-                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-950 border-t-transparent" />
-                      Creating...
-                    </div>
-                  ) : (
-                    'Create Category'
-                  )}
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-900 mt-4">
+                <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} disabled={submitting} className="border-slate-850 bg-slate-900/20 text-slate-400">Cancel</Button>
+                <Button type="submit" disabled={submitting} className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold">
+                  {submitting ? 'Saving...' : 'Save Category'}
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {isDeleteModalOpen && categoryToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" onClick={() => !submitting && setIsDeleteModalOpen(false)} />
+          <div className="relative w-full max-w-sm transform overflow-hidden rounded-2xl border border-red-500/20 bg-slate-950/90 p-6 shadow-2xl backdrop-blur-xl text-center">
+            <div className="mx-auto mb-4 h-12 w-12 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500">
+              <Trash2 className="h-6 w-6" />
+            </div>
+            <h3 className="text-lg font-bold text-slate-100 mb-1">Delete Category?</h3>
+            <p className="text-xs text-slate-400 mb-4">
+              Are you sure you want to delete <strong className="text-slate-200">{categoryToDelete.name}</strong>? This cannot be undone. 
+              (It will fail if products are linked).
+            </p>
+
+            {submitError && (
+              <div className="text-xs text-red-400 bg-red-500/5 border border-red-500/20 rounded-lg p-2 mb-4">
+                {submitError}
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <Button type="button" variant="outline" onClick={() => setIsDeleteModalOpen(false)} disabled={submitting} className="flex-1 border-slate-800 text-slate-300">
+                Cancel
+              </Button>
+              <Button type="button" onClick={handleDeleteCategory} disabled={submitting} className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold">
+                {submitting ? 'Deleting...' : 'Delete'}
+              </Button>
+            </div>
           </div>
         </div>
       )}
