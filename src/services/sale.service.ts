@@ -176,6 +176,8 @@ export class SaleService {
           },
         },
       },
+      orderBy: { created_at: 'desc' },
+      take: 100,
     });
   }
 
@@ -189,31 +191,27 @@ export class SaleService {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    // 1. Today's Sales Revenue
-    const todaySales = await prisma.sale.aggregate({
-      _sum: {
-        total: true,
-      },
-      where: {
-        created_at: {
-          gte: today,
-          lt: tomorrow,
+    // Run independent queries concurrently to improve dashboard load time
+    const [todaySales, totalOrders, totalProducts, cashierRole] = await Promise.all([
+      prisma.sale.aggregate({
+        _sum: {
+          total: true,
         },
-      },
-    });
-
-    // 2. Total Orders (Count)
-    const totalOrders = await prisma.sale.count();
-
-    // 3. Total Products (Count)
-    const totalProducts = await prisma.product.count({
-      where: { status: true },
-    });
-
-    // 4. Total Cashiers (Count)
-    const cashierRole = await prisma.role.findUnique({
-      where: { name: 'CASHIER' },
-    });
+        where: {
+          created_at: {
+            gte: today,
+            lt: tomorrow,
+          },
+        },
+      }),
+      prisma.sale.count(),
+      prisma.product.count({
+        where: { status: true },
+      }),
+      prisma.role.findUnique({
+        where: { name: 'CASHIER' },
+      })
+    ]);
     
     let totalCashiers = 0;
     if (cashierRole) {
