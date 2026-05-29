@@ -192,33 +192,21 @@ export class SaleService {
     tomorrow.setDate(tomorrow.getDate() + 1);
 
     // Run independent queries concurrently to improve dashboard load time
-    const [todaySales, totalOrders, totalProducts, cashierRole] = await Promise.all([
+    const [todaySales, totalOrders, totalProducts, totalCashiers] = await Promise.all([
       prisma.sale.aggregate({
-        _sum: {
-          total: true,
-        },
+        _sum: { total: true },
         where: {
-          created_at: {
-            gte: today,
-            lt: tomorrow,
-          },
+          created_at: { gte: today, lt: tomorrow },
         },
       }),
       prisma.sale.count(),
       prisma.product.count({
         where: { status: true },
       }),
-      prisma.role.findUnique({
-        where: { name: 'CASHIER' },
+      prisma.user.count({
+        where: { role: { name: 'CASHIER' } },
       })
     ]);
-    
-    let totalCashiers = 0;
-    if (cashierRole) {
-      totalCashiers = await prisma.user.count({
-        where: { role_id: cashierRole.id },
-      });
-    }
 
     return {
       todaySales: todaySales._sum.total ? Number(todaySales._sum.total) : 0,
